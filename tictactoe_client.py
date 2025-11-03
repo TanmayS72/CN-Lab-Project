@@ -8,7 +8,7 @@ import threading
 import json
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
-from datetime import datetime
+
 
 class TicTacToeClient:
     def __init__(self, host='127.0.0.1', port=5555):
