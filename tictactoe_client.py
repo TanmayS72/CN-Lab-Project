@@ -8,7 +8,7 @@ import threading
 import json
 import tkinter as tk
 from tkinter import messagebox, scrolledtext
-
+from datetime import datetime
 
 class TicTacToeClient:
     def __init__(self, host='127.0.0.1', port=5555):
@@ -21,6 +21,7 @@ class TicTacToeClient:
         self.opponent = None
         self.current_turn = None
         self.board = ['' for _ in range(9)]
+        self.running = True
         
         # GUI
         self.root = tk.Tk()
@@ -46,16 +47,28 @@ class TicTacToeClient:
             
     def receive_messages(self):
         """Receive messages from server"""
-        while True:
+        buffer = ""
+        while self.running:
             try:
                 data = self.client.recv(4096).decode('utf-8')
                 if not data:
                     break
-                    
-                message = json.loads(data)
-                self.handle_message(message)
+                
+                buffer += data
+                
+                # Process complete JSON messages
+                while buffer:
+                    try:
+                        message, index = json.JSONDecoder().raw_decode(buffer)
+                        buffer = buffer[index:].lstrip()
+                        self.root.after(0, self.handle_message, message)
+                    except json.JSONDecodeError:
+                        # Incomplete message, wait for more data
+                        break
+                        
             except Exception as e:
-                print(f"Error receiving message: {e}")
+                if self.running:
+                    print(f"Error receiving message: {e}")
                 break
                 
     def handle_message(self, message):
@@ -84,7 +97,9 @@ class TicTacToeClient:
     def send_message(self, message):
         """Send message to server"""
         try:
-            self.client.send(json.dumps(message).encode('utf-8'))
+            if self.client:
+                msg = json.dumps(message) + '\n'
+                self.client.send(msg.encode('utf-8'))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to send message: {e}")
             
@@ -108,6 +123,7 @@ class TicTacToeClient:
                 bg='#34495e', fg='#ecf0f1').pack(pady=5)
         self.password_entry = tk.Entry(frame, font=('Arial', 12), width=25, show='*')
         self.password_entry.pack(pady=5)
+        self.password_entry.bind('<Return>', lambda e: self.login())
         
         btn_frame = tk.Frame(frame, bg='#34495e')
         btn_frame.pack(pady=20)
@@ -337,10 +353,10 @@ class TicTacToeClient:
             result = "It's a Draw!"
             messagebox.showinfo("Game Over", result)
         elif winner == self.username:
-            result = "You Win!"
+            result = "You Win! 🎉"
             messagebox.showinfo("Game Over", result)
         else:
-            result = "You Lose!"
+            result = "You Lose! 😞"
             messagebox.showinfo("Game Over", result)
             
         # Return to lobby after 2 seconds
@@ -356,8 +372,12 @@ class TicTacToeClient:
         
     def send_chat(self):
         """Send a chat message"""
+        if not hasattr(self, 'chat_entry'):
+            return
+            
         message = self.chat_entry.get().strip()
         if message:
+            print(f"Sending chat: {message}")  # Debug
             self.send_message({
                 'type': 'chat',
                 'message': message
@@ -366,12 +386,27 @@ class TicTacToeClient:
             
     def handle_chat(self, message):
         """Handle incoming chat message"""
+        if not hasattr(self, 'chat_display'):
+            return
+            
         username = message.get('username')
         msg = message.get('message')
         timestamp = message.get('timestamp')
         
+        print(f"Received chat: {username}: {msg}")  # Debug
+        
         self.chat_display.config(state=tk.NORMAL)
-        self.chat_display.insert(tk.END, f"[{timestamp}] {username}: {msg}\n")
+        
+        # Color code messages
+        if username == self.username:
+            self.chat_display.insert(tk.END, f"[{timestamp}] You: {msg}\n", 'own')
+        else:
+            self.chat_display.insert(tk.END, f"[{timestamp}] {username}: {msg}\n", 'other')
+        
+        # Configure tags for colors
+        self.chat_display.tag_config('own', foreground='#3498db')
+        self.chat_display.tag_config('other', foreground='#2ecc71')
+        
         self.chat_display.see(tk.END)
         self.chat_display.config(state=tk.DISABLED)
         
@@ -392,6 +427,7 @@ class TicTacToeClient:
         
     def on_closing(self):
         """Handle window closing"""
+        self.running = False
         if self.client:
             try:
                 self.send_message({'type': 'leave_game'})

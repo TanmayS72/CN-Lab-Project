@@ -252,24 +252,31 @@ class TicTacToeServer:
         """Handle chat messages"""
         username = self.clients.get(conn)
         if not username or username not in self.player_games:
+            print(f"[CHAT ERROR] User {username} not in game")
             return
             
         game_id = self.player_games[username]
         game = self.games.get(game_id)
         
         if not game:
+            print(f"[CHAT ERROR] Game {game_id} not found")
             return
+        
+        chat_text = message.get('message', '')
+        print(f"[CHAT] {username}: {chat_text}")
             
         chat_msg = {
             'type': 'chat',
             'username': username,
-            'message': message.get('message'),
+            'message': chat_text,
             'timestamp': datetime.now().strftime('%H:%M:%S')
         }
         
         # Send to both players
-        self.send_message(game.player1_conn, chat_msg)
-        self.send_message(game.player2_conn, chat_msg)
+        if game.player1_conn:
+            self.send_message(game.player1_conn, chat_msg)
+        if game.player2_conn:
+            self.send_message(game.player2_conn, chat_msg)
         
     def handle_leave_game(self, conn):
         """Handle player leaving a game"""
@@ -313,7 +320,8 @@ class TicTacToeServer:
     def send_message(self, conn, message):
         """Send a message to a client"""
         try:
-            conn.send(json.dumps(message).encode('utf-8'))
+            msg = json.dumps(message) + '\n'
+            conn.send(msg.encode('utf-8'))
         except Exception as e:
             print(f"[ERROR] Failed to send message: {e}")
 
